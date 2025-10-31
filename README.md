@@ -296,7 +296,7 @@ void assert_failed(uint8_t *file, uint32_t line)
 
 
 ## Output screen shots of serial port utility   :
-![WhatsApp Image 2025-09-20 at 15 34 38_ab0feae3](https://github.com/user-attachments/assets/ed99c85d-fc99-49f2-a393-9ed983d90828)
+<img width="1905" height="1088" alt="image" src="https://github.com/user-attachments/assets/a4bb118f-337a-46dc-be8e-9ea7bb3e6952" />
  
  ## Circuit board :
 <img width="645" height="765" alt="491867363-54c94bd0-e141-4b67-ace7-f71fc164be8e" src="https://github.com/user-attachments/assets/be6a769e-2554-4503-91bc-3b48f841fc6c" />

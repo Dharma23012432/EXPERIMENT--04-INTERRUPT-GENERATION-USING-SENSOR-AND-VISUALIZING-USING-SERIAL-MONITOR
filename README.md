@@ -123,42 +123,175 @@ The diagram below shows how the GPIO pins are connected to the 16 interrupt line
 
 ## STM 32 CUBE PROGRAM :
 ```
+/* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stdio.h"
-#if defined(_GNUC_)
-#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
-#endif
+#include "stdbool.h"
 
-UART_HandleTypeDef huart2;
+/* Global Variables ---------------------------------------------------------*/
+bool IRSENSOR_STATE = 1;  // last known state
+bool current_IR_state;
 
+/* Function Prototypes ------------------------------------------------------*/
+void IRPAIR(void);
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 
+/* UART Handle --------------------------------------------------------------*/
+UART_HandleTypeDef huart2;
+
+/* Redirect printf to UART --------------------------------------------------*/
+#if defined(_ICCARM) || defined(_ARMCC_VERSION)
+#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+#elif defined(__GNUC__)
+#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#endif
+
+PUTCHAR_PROTOTYPE
+{
+  HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+  return ch;
+}
+
+/* Main --------------------------------------------------------------------*/
 int main(void)
 {
-    HAL_Init();
+  HAL_Init();
+  SystemClock_Config();
+  MX_GPIO_Init();
+  MX_USART2_UART_Init();
 
-    SystemClock_Config();
+  printf("System Initialized\n");
 
-    MX_GPIO_Init();
-    MX_USART2_UART_Init();
-    while (1)
+  while (1)
   {
-    
+    IRPAIR();
+    HAL_Delay(200); // small delay to avoid spamming UART
   }
+}
+
+/* IR Sensor Check Function ------------------------------------------------*/
+void IRPAIR(void)
+{
+  current_IR_state = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_4);
+
+  // Check if state changed since last read
+  if (current_IR_state != IRSENSOR_STATE)
+  {
+    IRSENSOR_STATE = current_IR_state; // update last state
+
+    if (current_IR_state == GPIO_PIN_RESET)
+    {
+      HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);
+      printf("OBSTACLE DETECTED\n");
+    }
+    else
+    {
+      HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);
+      printf("OBSTACLE NOT DETECTED\n");
+    }
   }
+}
+
+/* GPIO External Interrupt Callback ---------------------------------------*/
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-	if(HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_3)==1)
-	{
-		printf("INTERRUPT GENERATED\n");
-	}
+  if (GPIO_Pin == GPIO_PIN_4)
+  {
+    printf("INTERRUPT GENERATED\n");
+  }
 }
-PUTCHAR_PROTOTYPE{
-	HAL_UART_Transmit(&huart2, (uint8_t*)&ch,1,0xFFFF);
-	return ch;
+
+/* USART2 Initialization ---------------------------------------------------*/
+static void MX_USART2_UART_Init(void)
+{
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
 }
+
+/* GPIO Initialization -----------------------------------------------------*/
+static void MX_GPIO_Init(void)
+{
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  /* PB4 - IR Sensor Input */
+  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;   // INPUT mode (not interrupt)
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /* PB5 - LED Output */
+  GPIO_InitStruct.Pin = GPIO_PIN_5;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+}
+
+/* System Clock Configuration ---------------------------------------------*/
+void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);
+
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_MSI;
+  RCC_OscInitStruct.MSIState = RCC_MSI_ON;
+  RCC_OscInitStruct.MSICalibrationValue = RCC_MSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_6;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK3 | RCC_CLOCKTYPE_HCLK |
+                                RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 |
+                                RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_MSI;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.AHBCLK3Divider = RCC_SYSCLK_DIV1;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/* Error Handler -----------------------------------------------------------*/
+void Error_Handler(void)
+{
+  __disable_irq();
+  while (1)
+  {
+  }
+}
+
+#ifdef USE_FULL_ASSERT
+void assert_failed(uint8_t *file, uint32_t line)
+{
+  printf("Wrong parameters value: file %s on line %lu\r\n", file, line);
+}
+#endif
+
 ```
 
 
